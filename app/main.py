@@ -40,4 +40,4 @@ def version():
 def root():
     if delayed_failure_active():
         return error()
-    return {"message": "order accepted", "version": os.getenv("APP_VERSION", "dev")}
+    return {"message": "order accepted!!", "version": os.getenv("APP_VERSION", "dev")}
