@@ -1,0 +1,17 @@
+misconfigurations:
+  - id: AWS-0053
+    paths:
+      - "alb.tf"
+    statement: The ALB is the public entry point of the demo service, it has to be internet-facing.
+  - id: AWS-0054
+    paths:
+      - "alb.tf"
+    statement: Demo environment has no domain, so there is no certificate for an HTTPS listener. HTTPS is added once a domain is available.
+  - id: AWS-0104
+    paths:
+      - "ecs.tf"
+    statement: Tasks run in public subnets without NAT Gateway or VPC endpoints (cost), so they need HTTPS egress to ECR and CloudWatch Logs public endpoints. Only port 443 is open.
+  - id: AWS-0164
+    paths:
+      - "network.tf"
+    statement: Public subnets are intentional (no NAT Gateway). Tasks accept traffic only from the ALB security group.
