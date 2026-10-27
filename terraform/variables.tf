@@ -13,8 +13,8 @@ variable "environment" {
   default = "demo"
 }
 
-variable "github_repo" {
-  description = "GitHub repository in owner/name form"
+variable "github_oidc_repo" {
+  description = "Repository as it appears in the OIDC sub claim: owner@owner_id/name@repo_id"
   type        = string
 }
 

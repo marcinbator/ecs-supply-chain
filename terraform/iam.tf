@@ -12,9 +12,9 @@ locals {
 
 data "aws_iam_policy_document" "github_trust" {
   for_each = {
-    plan        = "repo:${var.github_repo}:pull_request"
-    infra-apply = "repo:${var.github_repo}:environment:infra"
-    app-deploy  = "repo:${var.github_repo}:ref:refs/heads/main"
+    plan        = "repo:${var.github_oidc_repo}:pull_request"
+    infra-apply = "repo:${var.github_oidc_repo}:environment:infra"
+    app-deploy  = "repo:${var.github_oidc_repo}:ref:refs/heads/main"
   }
 
   statement {
@@ -55,7 +55,7 @@ data "aws_iam_policy_document" "gh_plan" {
   statement {
     sid       = "StateLock"
     actions   = ["s3:PutObject", "s3:DeleteObject"]
-    resources = ["arn:aws:s3:::${local.state_bucket}/demo/terraform.tfstate.tflock"]
+    resources = ["arn:aws:s3:::${local.state_bucket}/terraform.tfstate.tflock"]
   }
 }
 
@@ -144,9 +144,12 @@ data "aws_iam_policy_document" "gh_infra_apply" {
   }
 
   statement {
-    sid       = "State"
-    actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
-    resources = ["arn:aws:s3:::${local.state_bucket}/demo/*"]
+    sid     = "State"
+    actions = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+    resources = [
+      "arn:aws:s3:::${local.state_bucket}/terraform.tfstate",
+      "arn:aws:s3:::${local.state_bucket}/terraform.tfstate.tflock",
+    ]
   }
 
   statement {
@@ -200,15 +203,14 @@ data "aws_iam_policy_document" "gh_app_deploy" {
   }
 
   statement {
-    sid       = "Service"
-    actions   = ["ecs:UpdateService", "ecs:DescribeServices", "ecs:ListServiceDeployments"]
+    sid = "Service"
+    actions = [
+      "ecs:UpdateService",
+      "ecs:DescribeServices",
+      "ecs:ListServiceDeployments",
+      "ecs:DescribeServiceDeployments",
+    ]
     resources = [local.ecs_service_arn]
-  }
-
-  statement {
-    sid       = "ServiceDeployments"
-    actions   = ["ecs:DescribeServiceDeployments"]
-    resources = ["arn:aws:ecs:${var.region}:${local.account_id}:service-deployment/${aws_ecs_cluster.main.name}/${local.name}/*"]
   }
 
   statement {
