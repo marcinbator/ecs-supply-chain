@@ -208,9 +208,18 @@ data "aws_iam_policy_document" "gh_app_deploy" {
       "ecs:UpdateService",
       "ecs:DescribeServices",
       "ecs:ListServiceDeployments",
-      "ecs:DescribeServiceDeployments",
     ]
     resources = [local.ecs_service_arn]
+  }
+
+  # Authorized against both the service and the service deployment ARN
+  statement {
+    sid     = "ServiceDeployments"
+    actions = ["ecs:DescribeServiceDeployments"]
+    resources = [
+      local.ecs_service_arn,
+      "arn:aws:ecs:${var.region}:${local.account_id}:service-deployment/${aws_ecs_cluster.main.name}/${local.name}/*",
+    ]
   }
 
   statement {
