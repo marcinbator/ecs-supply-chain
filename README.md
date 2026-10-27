@@ -54,11 +54,19 @@ Role `gh-plan`, `gh-infra-apply` i `gh-app-deploy` tworzy Terraform.
 ```bash
 cd terraform
 cp terraform.tfvars.example terraform.tfvars
-# uzupełnij github_repo (owner/nazwa)
+# uzupełnij github_oidc_repo (opis niżej)
 terraform init
 terraform plan
 terraform apply
 ```
+
+`github_oidc_repo` to repozytorium w formacie z claimu `sub` tokenu OIDC: `owner@<owner-id>/repo@<repo-id>`. Repozytoria utworzone po 15.07.2026 mają w tym claimie niezmienne ID właściciela i repo zamiast samych nazw, więc rola z warunkiem `repo:owner/repo:...` nie zadziała. ID można odczytać tak:
+
+```bash
+curl -s https://api.github.com/repos/<owner>/<repo> | jq '.owner.id, .id'
+```
+
+W CI ta sama wartość jest składana z kontekstu `github` w `infra.yml`.
 
 Apply tworzy całą infrastrukturę. Usługa ECS startuje z `desired_count = 0` i obrazem zastępczym, bo w ECR nie ma jeszcze żadnego podpisanego obrazu. Pierwsze wdrożenie z pipeline'u ustawia obraz po digeście i skaluje usługę do 1 zadania.
 
