@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Usage: loadgen.sh <alb-url> [duration-seconds]
+# Usage: loadgen.sh [alb-url] [duration-seconds]
 # Sends about 5 requests per second to /version, writes time, HTTP code and
 # version to a CSV file and prints a summary at the end (or on Ctrl+C).
 set -uo pipefail
 
-URL="${1:?usage: loadgen.sh <alb-url> [duration-seconds]}"
+URL="${1:-$(terraform -chdir="$(dirname "$0")/../terraform" output -raw alb_url)}"
 DURATION="${2:-0}"
 CSV="loadgen-$(date +%Y%m%d-%H%M%S).csv"
 

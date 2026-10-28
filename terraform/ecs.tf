@@ -97,7 +97,7 @@ resource "aws_ecs_service" "app" {
 
   deployment_configuration {
     strategy             = "BLUE_GREEN"
-    bake_time_in_minutes = 10
+    bake_time_in_minutes = 5
   }
 
   deployment_circuit_breaker {

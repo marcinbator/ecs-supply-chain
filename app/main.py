@@ -14,7 +14,7 @@ def failure_mode() -> str:
 
 
 def delayed_failure_active() -> bool:
-    delay = int(os.getenv("FAILURE_DELAY_SECONDS", "180"))
+    delay = int(os.getenv("FAILURE_DELAY_SECONDS", "90"))
     return failure_mode() == "delayed" and time.monotonic() - STARTED_AT >= delay
 
 
