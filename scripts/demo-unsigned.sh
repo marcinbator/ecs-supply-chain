@@ -20,7 +20,7 @@ docker push "$REGISTRY/ecs-supply-chain:$TAG"
 IMAGE=$(docker inspect --format '{{index .RepoDigests 0}}' "$REGISTRY/ecs-supply-chain:$TAG")
 
 echo "== Deploying unsigned image $IMAGE"
-if scripts/deploy.sh "$IMAGE"; then
+if .github/scripts/deploy.sh "$IMAGE"; then
   echo "UNEXPECTED: unsigned image was deployed"
   exit 1
 fi
