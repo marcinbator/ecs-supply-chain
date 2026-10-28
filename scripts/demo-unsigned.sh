@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Usage: demo-unsigned.sh <owner/repo>
+# Usage: demo-unsigned.sh
 # Pushes a locally built, unsigned image to ECR and tries to deploy it through
 # the same verification step as the pipeline. Then tries to overwrite its tag.
 set -euo pipefail
 
-REPO="${1:?usage: demo-unsigned.sh <owner/repo>}"
+REPO="marcinbator/ecs-supply-chain"
 export AWS_REGION="${AWS_REGION:-eu-central-1}"
 export ECS_CLUSTER=ecs-supply-chain ECS_SERVICE=ecs-supply-chain
 export CERT_IDENTITY="https://github.com/$REPO/.github/workflows/app.yml@refs/heads/main"

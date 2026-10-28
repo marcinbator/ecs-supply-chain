@@ -1,6 +1,6 @@
 # ecs-supply-chain
 
-Projekt BRCh: bezpieczny supply chain dla aplikacji kontenerowej na AWS. Aplikacja FastAPI jest budowana, skanowana (Trivy), opisywana SBOM-em, podpisywana (Cosign keyless) i wdrażana po digeście na ECS Fargate w strategii blue/green z bake time 10 minut i rollbackiem na alarmach CloudWatch. Zmiany infrastruktury przechodzą przez PR ze skanem Trivy i wyceną kosztu planu z progiem wymagającym ręcznej akceptacji.
+Projekt BRCh: bezpieczny supply chain dla aplikacji kontenerowej na AWS. Aplikacja FastAPI jest budowana, skanowana (Trivy), opisywana SBOM-em, podpisywana (Cosign keyless) i wdrażana po digeście na ECS Fargate w strategii blue/green z bake time 5 minut i rollbackiem na alarmach CloudWatch. Zmiany infrastruktury przechodzą przez PR ze skanem Trivy i wyceną kosztu planu z progiem wymagającym ręcznej akceptacji.
 
 Opis architektury i diagramy: [docs/architecture.md](docs/architecture.md).
 
@@ -110,13 +110,13 @@ Settings, Branches, **Add branch ruleset** (albo classic rule):
 
 Push na `main` ze zmianą w `app/` albo Actions, **app**, **Run workflow** (`failure_mode = none`). Pipeline: testy, build, Trivy, SBOM, push do ECR, podpis Cosign, atestacja SBOM, weryfikacja podpisu, nowa rewizja task definition z `repo@sha256:...`, `update-service`, czekanie na koniec wdrożenia z bake time.
 
-Pierwsze wdrożenie trwa około 12-15 minut (bake time 10 minut). Potem aplikacja jest pod `alb_url`.
+Pierwsze wdrożenie trwa około 7-10 minut (bake time 5 minut). Potem aplikacja jest pod `alb_url`.
 
 ## Dobór alarmów a bake time
 
 Oba alarmy (`HTTPCode_Target_5XX_Count` i `TargetResponseTime` na poziomie ALB) mają okres 60 s i próg "2 z 3 punktów danych". ALB publikuje metryki co minutę z opóźnieniem około 1 minuty, więc alarm przechodzi w stan ALARM po około 3 minutach od pojawienia się błędów.
 
-Scenariusz `delayed`: zadania nowej wersji zaczynają zwracać 500 po 180 s od startu. Zanim ruch zostanie przełączony, mija około 1-2 minut (start zadań i healthchecki), więc błędy pojawiają się około 1-2 minut po przełączeniu, a alarm około 4-5 minut po przełączeniu. To mieści się w bake time 10 minut z zapasem około 5 minut, więc rollback następuje, gdy stara wersja nadal działa.
+Scenariusz `delayed`: zadania nowej wersji zaczynają zwracać 500 po 90 s od startu (`FAILURE_DELAY_SECONDS`). Od startu kontenera do przełączenia ruchu mija około 1 minuty (healthchecki i etapy wdrożenia), więc błędy pojawiają się około pół minuty po przełączeniu, a alarm około 3-3,5 minuty po przełączeniu. To mieści się w bake time 5 minut z zapasem około 1,5-2 minut, więc rollback następuje, gdy stara wersja nadal działa.
 
 Uwaga: po rollbacku alarm wraca do stanu OK dopiero po kilku minutach bez błędów. Kolejne wdrożenie warto uruchamiać, gdy alarmy są w stanie OK.
 
@@ -132,10 +132,10 @@ scripts/loadgen.sh "$(terraform -chdir=terraform output -raw alb_url)"
 | Scenariusz | Jak uruchomić | Oczekiwany wynik |
 |---|---|---|
 | Poprawne wdrożenie | zmień `app/VERSION` z `1.0.0` na `1.1.0`, PR, merge | zero błędów w `loadgen.sh`, `/version` zmienia się z 1.0.0 na 1.1.0 |
-| Obraz nie przechodzi `/health` | `scripts/demo-bad-image.sh health` | nowa wersja nie dostaje ruchu, wdrożenie zatrzymane przez circuit breaker, raport "STOPPED" |
-| Błędy po wdrożeniu | `scripts/demo-bad-image.sh delayed` | nowa wersja przejmuje ruch, po kilku minutach alarm, ECS przełącza ruch na poprzednią wersję, raport "ROLLBACK" |
+| Obraz nie przechodzi `/health` | Actions, **app**, **Run workflow**, `failure_mode = health` | nowa wersja nie dostaje ruchu, wdrożenie zatrzymane przez circuit breaker, raport "STOPPED" |
+| Błędy po wdrożeniu | Actions, **app**, **Run workflow**, `failure_mode = delayed` | nowa wersja przejmuje ruch, po kilku minutach alarm, ECS przełącza ruch na poprzednią wersję, raport "ROLLBACK" |
 | Podatność CRITICAL | PR, w którym `app/requirements.txt` dostaje pakiet ze znaną krytyczną podatnością, albo `FROM` ze starym obrazem bazowym | job `build` kończy się na kroku Trivy, nic nie trafia do ECR |
-| Niepodpisany obraz i nadpisanie tagu | `scripts/demo-unsigned.sh <owner/repo>` (lokalne poświadczenia AWS) | `cosign verify` odrzuca obraz, usługa nie jest aktualizowana, push na istniejący tag odrzucony przez ECR |
+| Niepodpisany obraz i nadpisanie tagu | `scripts/demo-unsigned.sh` (lokalne poświadczenia AWS) | `cosign verify` odrzuca obraz, usługa nie jest aktualizowana, push na istniejący tag odrzucony przez ECR |
 | PR z publicznym bucketem lub SG otwartą na 0.0.0.0/0 na porcie innym niż 80/443 | PR z takim zasobem w `terraform/` | check `trivy` czerwony, merge zablokowany |
 | PR z NAT Gateway | gałąź `demo/nat-gateway`, opis niżej | komentarz z wyceną na PR, `cost-gate` czeka na zatwierdzenie w `infra-cost-approval` |
 
@@ -154,7 +154,7 @@ resource "aws_nat_gateway" "demo" {
 }
 ```
 
-Otwórz PR i nie scalaj go. NAT Gateway w `eu-central-1` to około 35-40 USD miesięcznie (godziny NAT i adres IPv4), więc przekracza próg 10 USD.
+Otwórz PR i nie scalaj go. NAT Gateway w `eu-central-1` to około 42 USD miesięcznie (godziny NAT i adres IPv4), więc przekracza próg 10 USD.
 
 ## Wycena kosztu w PR
 
@@ -183,7 +183,7 @@ Szacunek dla `eu-central-1` przy 1 zadaniu, bez ruchu (ceny z AWS Price List API
 | ECR, S3 | grosze | <1 |
 | **Razem** | **~0.065** | **~47** |
 
-Podczas wdrożenia blue/green przez około 12-15 minut działają dwa zadania. Środowisko warto usuwać po demonstracji.
+Podczas wdrożenia blue/green przez około 7-10 minut działają dwa zadania. Środowisko warto usuwać po demonstracji.
 
 ## Sprzątanie
 
