@@ -12,7 +12,7 @@
 2. `cd terraform && terraform destroy`
 3. Do not merge changes in `terraform/` while the environment is down.
 
-## Preparation (day before)
+## Preparation
 
 For each branch below: create the branch from the current `main`, make the change, commit and push.
 
