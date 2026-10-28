@@ -1,69 +1,69 @@
-# Architektura
+# Architecture
 
-## Infrastruktura AWS
+## AWS infrastructure
 
 ```mermaid
 flowchart LR
-  user([Użytkownik / loadgen]) -->|HTTP 80| alb[ALB]
-  subgraph vpc[VPC, 2 podsieci publiczne w 2 AZ]
-    alb -->|reguła produkcyjna| tgb[Target group blue]
-    alb -->|reguła testowa X-Deployment-Test| tgg[Target group green]
-    tgb --> t1[Zadania Fargate, wersja bieżąca]
-    tgg --> t2[Zadania Fargate, nowa wersja]
+  user([User / loadgen]) -->|HTTP 80| alb[ALB]
+  subgraph vpc[VPC, 2 public subnets in 2 AZs]
+    alb -->|production rule| tgb[Target group blue]
+    alb -->|test rule X-Deployment-Test| tgg[Target group green]
+    tgb --> t1[Fargate tasks, current version]
+    tgg --> t2[Fargate tasks, new version]
   end
-  t1 & t2 -->|HTTPS 443, publiczne IP| ecr[(ECR, IMMUTABLE, scan on push)]
+  t1 & t2 -->|HTTPS 443, public IP| ecr[(ECR, IMMUTABLE, scan on push)]
   t1 & t2 --> logs[(CloudWatch Logs)]
-  alb -. metryki .-> cw[Alarmy CloudWatch: 5xx, czas odpowiedzi]
-  cw -. rollback .-> ecs[Usługa ECS, BLUE_GREEN, bake 5 min]
+  alb -. metrics .-> cw[CloudWatch alarms: 5xx, response time]
+  cw -. rollback .-> ecs[ECS service, BLUE_GREEN, bake 5 min]
   ecs --> t1 & t2
-  gh[GitHub Actions] -->|OIDC| iam[Role gh-plan, gh-infra-apply, gh-app-deploy]
+  gh[GitHub Actions] -->|OIDC| iam[Roles gh-plan, gh-infra-apply, gh-app-deploy]
   iam --> ecr & ecs
-  tf[(S3: stan Terraform)] --- gh
+  tf[(S3: Terraform state)] --- gh
 ```
 
-Zasoby:
+Resources:
 
-- `network.tf`: VPC, 2 podsieci publiczne, Internet Gateway, bez NAT Gateway,
-- `ecr.tf`: repozytorium z niezmiennymi tagami, skanem przy push, szyfrowaniem KMS, lifecycle (20 obrazów),
-- `alb.tf`: ALB, listener HTTP 80, target groupy blue i green z healthcheckiem `/health`, reguła produkcyjna i testowa,
-- `ecs.tf`: klaster z Container Insights, task definition (read-only root filesystem), usługa w strategii `BLUE_GREEN`,
-- `monitoring.tf`: alarmy na poziomie ALB (wymiar `LoadBalancer`, obejmuje oba target groupy),
-- `iam.tf`: role dla GitHub Actions, rola wykonawcza zadań, rola infrastrukturalna ECS dla blue/green.
+- `network.tf`: VPC, 2 public subnets, Internet Gateway, no NAT Gateway,
+- `ecr.tf`: repository with immutable tags, scan on push, KMS encryption, lifecycle (20 images),
+- `alb.tf`: ALB, HTTP 80 listener, blue and green target groups with a `/health` health check, production and test rules,
+- `ecs.tf`: cluster with Container Insights, task definition (read-only root filesystem), service with the `BLUE_GREEN` strategy,
+- `monitoring.tf`: ALB-level alarms (`LoadBalancer` dimension, covers both target groups),
+- `iam.tf`: GitHub Actions roles, task execution role, ECS infrastructure role for blue/green.
 
-## Pipeline aplikacji (`app.yml`)
+## Application pipeline (`app.yml`)
 
 ```mermaid
 flowchart TB
-  subgraph ci [Każde uruchomienie: push, PR, ręczne]
+  subgraph ci [Every run: push, PR, manual]
     direction LR
     B[pytest] --> C[docker build] --> D{Trivy: CRITICAL?}
-    D -->|tak| X[stop, nic nie trafia do ECR]
-    D -->|nie| E[SBOM CycloneDX] --> F{PR?}
-    F -->|tak| Y[stop bez wdrożenia]
+    D -->|yes| X[stop, nothing pushed to ECR]
+    D -->|no| E[SBOM CycloneDX] --> F{PR?}
+    F -->|yes| Y[stop, no deployment]
   end
-  subgraph cd [Tylko main]
+  subgraph cd [main only]
     direction LR
-    G[OIDC, push do ECR, digest] --> H[cosign sign, attest SBOM] --> I{cosign verify}
-    I -->|brak podpisu| Z[stop, usługa bez zmian]
-    I -->|OK| J[task definition z repo@sha256] --> K[update-service] --> L[raport]
+    G[OIDC, push to ECR, digest] --> H[cosign sign, attest SBOM] --> I{cosign verify}
+    I -->|no signature| Z[stop, service unchanged]
+    I -->|OK| J[task definition with repo@sha256] --> K[update-service] --> L[report]
   end
-  ci -->|nie| cd
+  ci -->|no| cd
 ```
 
-Weryfikacja podpisu i wdrożenie są w `scripts/deploy.sh`. Ten sam skrypt jest wywoływany przez `scripts/demo-unsigned.sh`, więc demonstracja odrzucenia niepodpisanego obrazu używa dokładnie tej samej ścieżki co pipeline.
+Signature verification and deployment live in `scripts/deploy.sh`. The same script is called by `scripts/demo-unsigned.sh`, so the unsigned image demo uses exactly the same path as the pipeline.
 
-## Pipeline infrastruktury (`infra.yml`)
+## Infrastructure pipeline (`infra.yml`)
 
 ```mermaid
 flowchart LR
-  P[PR] --> plan[terraform plan<br>rola gh-plan] --> cost[cost.py<br>komentarz na PR] --> gate{wzrost kosztu<br>> próg?}
-  gate -->|tak| ap[cost-gate<br>infra-cost-approval<br>czeka na reviewera]
-  gate -->|nie| ok[cost-gate<br>infra-cost-ok]
+  P[PR] --> plan[terraform plan<br>role gh-plan] --> cost[cost.py<br>PR comment] --> gate{cost increase<br>> threshold?}
+  gate -->|yes| ap[cost-gate<br>infra-cost-approval<br>waits for reviewer]
+  gate -->|no| ok[cost-gate<br>infra-cost-ok]
   P --> trivy[trivy config]
-  ap & ok & trivy --> merge[merge do main] --> apply[terraform apply<br>środowisko infra<br>rola gh-infra-apply]
+  ap & ok & trivy --> merge[merge to main] --> apply[terraform apply<br>environment infra<br>role gh-infra-apply]
 ```
 
-## Wdrożenie blue/green z bake time
+## Blue/green deployment with bake time
 
 ```mermaid
 sequenceDiagram
@@ -71,22 +71,22 @@ sequenceDiagram
   participant E as ECS
   participant A as ALB
   participant C as CloudWatch
-  P->>E: update-service (nowa rewizja, digest)
-  E->>E: start zadań green
-  E->>A: rejestracja w target group green, healthcheck /health
-  alt healthcheck nie przechodzi
-    E->>E: circuit breaker, wdrożenie zatrzymane
-    Note over A: ruch produkcyjny cały czas na blue
-  else healthcheck OK
-    E->>A: ruch testowy na green, potem produkcyjny na green
-    Note over E: bake time 5 min, blue dalej działa
-    alt alarm 5xx lub czasu odpowiedzi
+  P->>E: update-service (new revision, digest)
+  E->>E: start green tasks
+  E->>A: register in green target group, health check /health
+  alt health check fails
+    E->>E: circuit breaker, deployment stopped
+    Note over A: production traffic stays on blue
+  else health check OK
+    E->>A: test traffic to green, then production traffic to green
+    Note over E: bake time 5 min, blue still running
+    alt 5xx or response time alarm
       C-->>E: ALARM
-      E->>A: ruch z powrotem na blue
-      E->>E: zatrzymanie green (rollback)
-    else brak alarmu przez 5 min
-      E->>E: zatrzymanie blue, green staje się produkcją
+      E->>A: traffic back to blue
+      E->>E: stop green (rollback)
+    else no alarm for 5 min
+      E->>E: stop blue, green becomes production
     end
   end
-  P->>E: describe-service-deployments, raport
+  P->>E: describe-service-deployments, report
 ```
