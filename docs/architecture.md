@@ -50,7 +50,7 @@ flowchart TB
   ci -->|no| cd
 ```
 
-Signature verification and deployment live in `scripts/deploy.sh`. The same script is called by `scripts/demo-unsigned.sh`, so the unsigned image demo uses exactly the same path as the pipeline.
+Signature verification and deployment live in `.github/scripts/deploy.sh`. The same script is called by `scripts/demo-unsigned.sh`, so the unsigned image demo uses exactly the same path as the pipeline.
 
 ## Infrastructure pipeline (`infra.yml`)
 

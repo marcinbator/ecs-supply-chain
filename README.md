@@ -10,7 +10,8 @@ Docs: [architecture](docs/architecture.md), [presentation runbook](docs/presenta
 app/                  application, tests, Dockerfile, VERSION
 terraform/            infrastructure (single root module, S3 backend)
 .github/workflows/    app.yml (application), infra.yml (infrastructure)
-scripts/              deploy.sh, cost.py, loadgen.sh, demo-unsigned.sh
+.github/scripts/      deploy.sh, cost.py (used by the pipelines)
+scripts/              loadgen.sh, demo-unsigned.sh (demo tools)
 docs/                 architecture, presentation runbook
 ```
 
@@ -39,7 +40,7 @@ Alarms on ALB `HTTPCode_Target_5XX_Count` and `TargetResponseTime` use a 60 s pe
 
 ## FinOps
 
-[scripts/cost.py](scripts/cost.py) prices the Terraform plan in the `plan` job with fixed `eu-central-1` on-demand prices from the AWS Price List API (no external service), comments the result on the PR and feeds `cost-gate`. Usage-based costs are not included.
+[.github/scripts/cost.py](.github/scripts/cost.py) prices the Terraform plan in the `plan` job with fixed `eu-central-1` on-demand prices from the AWS Price List API (no external service), comments the result on the PR and feeds `cost-gate`. Usage-based costs are not included.
 
 The running environment costs about 0.065 USD/h (about 47 USD/month): ALB, one Fargate task and public IPv4 addresses.
 
