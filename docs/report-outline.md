@@ -204,7 +204,7 @@ resource "aws_ecr_repository" "app" {
 ```
 
 - **GitHub**:
-  - ruleset na `main`: tylko przez PR, wymagane checki `trivy` i `cost-gate`, blokada force push i usuwania,
+  - ruleset na `main`: tylko przez PR, wymagane checki `trivy` i `cost-gate`, blokada force push i usuwania, administrator na liście bypass (może scalić mimo czerwonych checków),
   - środowisko `infra`: tylko gałąź `main`, jedyne źródło roli `gh-infra-apply`,
   - środowisko `infra-cost-approval`: wymagany reviewer,
   - akcje przypięte do pełnego SHA commita,
@@ -268,13 +268,13 @@ cost-gate:
 
 ### 6.1 Poprawne wdrożenie (happy path)
 
-- PR ze zmianą wersji, wycena kosztu +0.00, wszystkie checki zielone, merge.
+- PR ze zmianą wersji, komentarz Infracost: zmiana kosztu +0.00 USD, bez zatwierdzenia (`infra-cost-ok`), wszystkie checki zielone, merge.
 - Pipeline: test, build, SBOM jako artefakt, push, podpis, wdrożenie.
 - ECS: start green, przełączenie ruchu, bake time 5 min z alarmami OK, wyłączenie blue. Całość 7 min 41 s.
 - ECR: obraz z niezmiennym tagiem + artefakty podpisu i atestacji (typ "Other"), skan przy push: 0 CRITICAL.
 - Wynik: raport SUCCESS, zero błędów w `loadgen.sh`.
 
-![PR scalony, komentarz z wyceną kosztu](screenshots/02-happy-path/01-pr-merged-cost-comment.png)
+![Komentarz Infracost: brak zmiany kosztu](screenshots/02-happy-path/01-pr-infracost-comment.png)
 ![Wszystkie checki zielone](screenshots/02-happy-path/02-pr-checks-passed.png)
 ![Pipeline app.yml i artefakt SBOM](screenshots/02-happy-path/03-app-pipeline-sbom-artifact.png)
 ![ECS: start zadań green](screenshots/02-happy-path/04-ecs-scale-up-green.png)
@@ -290,24 +290,26 @@ cost-gate:
 
 - PR dodaje `django==2.2` do `app/requirements.txt`.
 - Trivy: 6 podatności CRITICAL (m.in. SQL injection), job `build` kończy się na kroku Trivy, obraz nie trafia do ECR.
+- Na PR pojawia się komentarz z tabelą podatności (pakiet, wersja zainstalowana, wersja z poprawką, link do CVE).
 
 ![PR: build czerwony](screenshots/03-critical-cve/01-pr-build-failed.png)
-![Trivy: 6 x CRITICAL w Django 2.2](screenshots/03-critical-cve/02-trivy-critical-django.png)
+![Komentarz na PR: 6 x CRITICAL w Django 2.2](screenshots/03-critical-cve/02-pr-trivy-comment.png)
 
 ### 6.3 Security group otwarta na świat
 
 - PR dodaje SG z portem 22 otwartym na `0.0.0.0/0`.
-- `trivy config`: AWS-0107 (HIGH), check `trivy` wymagany, merge zablokowany.
+- `trivy config`: AWS-0107 (HIGH), komentarz na PR z plikiem i linią, check `trivy` wymagany, merge zablokowany.
+- Administrator repozytorium jest na liście bypass rulesetu i może scalić PR mimo czerwonych checków ("Merge without waiting for requirements to be met").
 
-![PR: trivy czerwony, merge zablokowany](screenshots/04-open-security-group/01-pr-trivy-failed-merge-blocked.png)
-![Trivy: AWS-0107](screenshots/04-open-security-group/02-trivy-aws-0107.png)
+![PR: trivy czerwony, merge zablokowany, opcja bypass dla administratora](screenshots/04-open-security-group/01-pr-trivy-failed-bypass.png)
+![Komentarz na PR: AWS-0107](screenshots/04-open-security-group/02-pr-trivy-comment.png)
 
 ### 6.4 Kosztowna zmiana (NAT Gateway)
 
 - PR dodaje NAT Gateway + EIP.
-- Wycena Infracost: wzrost kosztu miesięcznego powyżej progu 10 USD, `cost-gate` czeka w `infra-cost-approval` na zatwierdzenie.
+- Wycena Infracost: +37.96 USD/mies. (NAT Gateway, nowy koszt około 68 USD/mies.), powyżej progu 10 USD, `cost-gate` czeka w `infra-cost-approval` na zatwierdzenie.
 
-![Komentarz z wyceną kosztu](screenshots/05-cost-gate/01-pr-cost-comment.png)
+![Komentarz Infracost: +38 USD/mies., wymagane zatwierdzenie](screenshots/05-cost-gate/01-pr-infracost-comment.png)
 ![Zatwierdzenie w środowisku infra-cost-approval](screenshots/05-cost-gate/02-cost-approval.png)
 
 ### 6.5 Niepodpisany obraz i nadpisanie tagu

@@ -32,7 +32,7 @@ Requirements: AWS CLI v2, Terraform >= 1.10, Docker, `jq`, `cosign`, public GitH
 5. **GitHub environments**:
    - `infra`: deployment branches limited to `main`. Only `terraform apply` runs here and only this environment can assume `gh-infra-apply`.
    - `infra-cost-approval`: required reviewers, "Prevent self-review" unchecked. `cost-gate` waits here when the cost increase is above the threshold.
-6. **Ruleset for `main`**: require a PR, require status checks `trivy` and `cost-gate`, block force pushes.
+6. **Ruleset for `main`**: require a PR, require status checks `trivy` and `cost-gate`, block force pushes. Repository admin in the bypass list, so a PR can be merged with failing checks ("Merge without waiting for requirements to be met").
 7. **First deployment**: Actions, **app**, **Run workflow** (`failure_mode = none`). The service starts with 0 tasks and a placeholder image until then. Takes about 7-10 minutes.
 
 ## Alarms and bake time
