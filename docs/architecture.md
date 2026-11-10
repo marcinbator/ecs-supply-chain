@@ -56,7 +56,7 @@ Signature verification and deployment live in `.github/scripts/deploy.sh`. The s
 
 ```mermaid
 flowchart LR
-  P[PR] --> plan[terraform plan<br>role gh-plan] --> cost[cost.py<br>PR comment] --> gate{cost increase<br>> threshold?}
+  P[PR] --> plan[terraform plan<br>role gh-plan] --> cost[Infracost<br>PR comment] --> gate{cost increase<br>> threshold?}
   gate -->|yes| ap[cost-gate<br>infra-cost-approval<br>waits for reviewer]
   gate -->|no| ok[cost-gate<br>infra-cost-ok]
   P --> trivy[trivy config]

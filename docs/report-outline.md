@@ -209,7 +209,8 @@ resource "aws_ecr_repository" "app" {
   - środowisko `infra-cost-approval`: wymagany reviewer,
   - akcje przypięte do pełnego SHA commita,
   - Dependabot (pip, docker, github-actions, terraform), co tydzień,
-  - repo bez sekretów, zmienne tylko `AWS_ACCOUNT_ID`, `AWS_REGION`, `COST_THRESHOLD_USD`.
+  - zmienne `AWS_ACCOUNT_ID`, `AWS_REGION`, `COST_THRESHOLD_USD`, jedyny sekret `INFRACOST_API_KEY` (darmowy klucz Infracost, bez dostępu do AWS),
+  - wynik nieudanych checków (pytest, Trivy, Terraform) jako komentarz na PR, aktualizowany przy kolejnych uruchomieniach.
 
 ## 5. Wdrożenie aplikacji (pipeline)
 
@@ -252,7 +253,7 @@ fi
 
 - PR: `plan` (fmt, validate, plan, plan.json, wycena kosztu, komentarz na PR), `trivy` (skan konfiguracji), `cost-gate`.
 - Push na `main`: `apply` w środowisku `infra`.
-- Wycena: własny skrypt `.github/scripts/cost.py`, ceny on-demand z AWS Price List API, tylko koszty stałe (Infracost odrzucony: darmowy klucz wygasa po 14 dniach).
+- Wycena: Infracost CLI (open source, Apache 2.0), `infracost diff` na `plan.json`, komentarz z rozbiciem kosztu na PR, próg `COST_THRESHOLD_USD` decyduje o `cost-gate`.
 
 ### List. Wybór środowiska w `cost-gate` (`.github/workflows/infra.yml`)
 
@@ -304,7 +305,7 @@ cost-gate:
 ### 6.4 Kosztowna zmiana (NAT Gateway)
 
 - PR dodaje NAT Gateway + EIP.
-- Wycena: 41.22 -> 82.83 USD/mies., +41.61 > próg 10, `cost-gate` czeka w `infra-cost-approval` na zatwierdzenie.
+- Wycena Infracost: wzrost kosztu miesięcznego powyżej progu 10 USD, `cost-gate` czeka w `infra-cost-approval` na zatwierdzenie.
 
 ![Komentarz z wyceną kosztu](screenshots/05-cost-gate/01-pr-cost-comment.png)
 ![Zatwierdzenie w środowisku infra-cost-approval](screenshots/05-cost-gate/02-cost-approval.png)

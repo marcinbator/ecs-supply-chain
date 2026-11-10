@@ -1,6 +1,6 @@
 # ecs-supply-chain
 
-A secure supply chain for a containerized application on AWS. The FastAPI app is built, scanned (Trivy), described with an SBOM, signed (Cosign keyless) and deployed by digest to ECS Fargate with blue/green, a 5 minute bake time and rollback on CloudWatch alarms. Terraform changes go through a PR with a Trivy scan and a cost estimate that requires approval above a threshold.
+A secure supply chain for a containerized application on AWS. The FastAPI app is built, scanned (Trivy), described with an SBOM, signed (Cosign keyless) and deployed by digest to ECS Fargate with blue/green, a 5 minute bake time and rollback on CloudWatch alarms. Terraform changes go through a PR with a Trivy scan and an Infracost cost estimate that requires approval above a threshold. Failed checks (tests, Trivy, Terraform) are reported as PR comments.
 
 Docs: [architecture](docs/architecture.md), [presentation runbook](docs/presentation.md).
 
@@ -10,7 +10,7 @@ Docs: [architecture](docs/architecture.md), [presentation runbook](docs/presenta
 app/                  application, tests, Dockerfile, VERSION
 terraform/            infrastructure (single root module, S3 backend)
 .github/workflows/    app.yml (application), infra.yml (infrastructure)
-.github/scripts/      deploy.sh, cost.py (used by the pipelines)
+.github/scripts/      deploy.sh, pr-comment.sh, trivy-report.sh (used by the pipelines)
 scripts/              loadgen.sh, demo-unsigned.sh (demo tools)
 docs/                 architecture, presentation runbook
 ```
@@ -27,7 +27,8 @@ Requirements: AWS CLI v2, Terraform >= 1.10, Docker, `jq`, `cosign`, public GitH
    curl -s https://api.github.com/repos/<owner>/<repo> | jq '.owner.id, .id'
    ```
 
-4. **GitHub repository variables**: `AWS_ACCOUNT_ID`, `AWS_REGION` (`eu-central-1`), `COST_THRESHOLD_USD` (`10`). No secrets.
+4. **GitHub repository variables**: `AWS_ACCOUNT_ID`, `AWS_REGION` (`eu-central-1`), `COST_THRESHOLD_USD` (`10`).
+   **Secret** `INFRACOST_API_KEY`: free key from the open source [Infracost CLI](https://github.com/infracost/infracost) (`infracost auth login`, then `infracost configure get api_key`). Add the same key as a Dependabot secret, otherwise Dependabot Terraform PRs cannot run the `plan` job.
 5. **GitHub environments**:
    - `infra`: deployment branches limited to `main`. Only `terraform apply` runs here and only this environment can assume `gh-infra-apply`.
    - `infra-cost-approval`: required reviewers, "Prevent self-review" unchecked. `cost-gate` waits here when the cost increase is above the threshold.
@@ -40,7 +41,11 @@ Alarms on ALB `HTTPCode_Target_5XX_Count` and `TargetResponseTime` use a 60 s pe
 
 ## FinOps
 
-[.github/scripts/cost.py](.github/scripts/cost.py) prices the Terraform plan in the `plan` job with fixed `eu-central-1` on-demand prices from the AWS Price List API (no external service), comments the result on the PR and feeds `cost-gate`. Usage-based costs are not included.
+The `plan` job runs the open source [Infracost CLI](https://github.com/infracost/infracost) (`infracost diff` on `plan.json`), comments the cost breakdown on the PR and sets `over_threshold` for `cost-gate` when the monthly cost change is above `COST_THRESHOLD_USD`. Usage-based costs (data transfer, NAT processing, logs) are shown as usage-dependent and not counted. The ECS service is defined with `desired_count = 0` (the pipeline scales it), so Infracost does not count the running Fargate task.
+
+## PR comments
+
+[.github/scripts/pr-comment.sh](.github/scripts/pr-comment.sh) keeps one comment per check on the PR and updates it in place: unit tests (`pytest` output), image build and Trivy image scan, Terraform plan, Trivy config scan. On failure the comment shows the findings ([.github/scripts/trivy-report.sh](.github/scripts/trivy-report.sh) turns the Trivy JSON report into a table) or the end of the log. When a later run passes, the existing comment is changed to "passed".
 
 The running environment costs about 0.065 USD/h (about 47 USD/month): ALB, one Fargate task and public IPv4 addresses.
 

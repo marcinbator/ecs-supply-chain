@@ -28,8 +28,12 @@ env:
 jobs:
   test:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write
     defaults:
       run:
+        shell: bash
         working-directory: app
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -37,7 +41,13 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements-dev.txt
-      - run: pytest -v
+      - run: pytest -v 2>&1 | tee pytest.log
+      - name: Comment result on PR
+        if: always() && github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ../.github/scripts/pr-comment.sh check unit-tests "Unit tests" "${{ job.status }}" pytest.log
 
   build:
     needs: test
@@ -45,6 +55,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
+      pull-requests: write
     outputs:
       image: ${{ steps.push.outputs.image }}
     env:
@@ -79,7 +90,9 @@ jobs:
           version: v0.75.0
 
       - name: Trivy scan (fail on CRITICAL)
-        run: trivy image --severity CRITICAL --exit-code 1 "app:${{ steps.version.outputs.tag }}"
+        run: |
+          trivy image --severity CRITICAL --format json --output trivy.json "app:${{ steps.version.outputs.tag }}"
+          trivy convert --format table --exit-code 1 trivy.json
 
       - name: SBOM (CycloneDX)
         run: trivy image --format cyclonedx --output sbom.cdx.json "app:${{ steps.version.outputs.tag }}"
@@ -120,6 +133,15 @@ jobs:
         run: |
           cosign sign --yes "$IMAGE"
           cosign attest --yes --type cyclonedx --predicate sbom.cdx.json "$IMAGE"
+
+      - name: Comment result on PR
+        if: always() && github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ -f trivy.json ]]; then .github/scripts/trivy-report.sh trivy.json > trivy.md; fi
+          .github/scripts/pr-comment.sh check image-build "Image build and Trivy scan" "${{ job.status }}" trivy.md
 
   deploy:
     needs: build
