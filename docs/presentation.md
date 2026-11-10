@@ -39,7 +39,7 @@ resource "aws_vpc_security_group_ingress_rule" "ssh" {
 }
 ```
 
-**`demo/nat-gateway`:** create `terraform/nat.tf` (cost +41.61 USD/month, `cost-gate` waits):
+**`demo/nat-gateway`:** create `terraform/nat.tf` (Infracost estimate above the 10 USD/month threshold, `cost-gate` waits):
 
 ```hcl
 resource "aws_eip" "nat" {
@@ -61,10 +61,10 @@ scripts/loadgen.sh "$(terraform -chdir=terraform output -raw alb_url)"
 ```
 
 1. **Successful deployment:** open a PR from `demo/v1.1` to `main`. Merge after the checks are green (about 3-4 min). In `loadgen.sh` the version changes from 1.0.0 to 1.1.0 without errors. Show steps 2-4 while the checks and the deployment run.
-2. **CRITICAL vulnerability:** open a PR from `demo/critical-cve`. After about 2 min the `build` job stops at the Trivy step, nothing is pushed to ECR. Close the PR.
+2. **CRITICAL vulnerability:** open a PR from `demo/critical-cve`. After about 2 min the `build` job stops at the Trivy step, nothing is pushed to ECR, a comment with the vulnerabilities appears on the PR. Close the PR.
 3. **Infrastructure:**
-   - open a PR from `demo/open-sg`. After about a minute the `trivy` check is red, merge blocked. Close the PR.
-   - open a PR from `demo/nat-gateway`. After about 2 min a cost comment appears and `cost-gate` waits. Approve (Review deployments, Approve), do not merge, close the PR.
+   - open a PR from `demo/open-sg`. After about a minute the `trivy` check is red, merge blocked, a comment with AWS-0107 appears on the PR. Close the PR.
+   - open a PR from `demo/nat-gateway`. After about 2 min an Infracost comment appears and `cost-gate` waits. Approve (Review deployments, Approve), do not merge, close the PR.
 4. **Unsigned image:** `scripts/demo-unsigned.sh`. `cosign verify` rejects the image, ECR rejects the tag overwrite.
 5. **Health check:** after the 1.1.0 deployment finishes, Run workflow with `failure_mode = health`. The new version gets no traffic, `loadgen.sh` shows no errors, report: STOPPED.
 6. **Rollback on alarm:** Run workflow with `failure_mode = delayed`. Version `1.1.0-delayed` takes traffic, 500 errors after about 1.5 min, alarm, back to 1.1.0. Report: ROLLBACK. Show the alarm in CloudWatch and the Deployments tab in ECS.
