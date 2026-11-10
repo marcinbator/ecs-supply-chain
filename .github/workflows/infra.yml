@@ -27,6 +27,7 @@ jobs:
       over_threshold: ${{ steps.cost.outputs.over_threshold }}
     defaults:
       run:
+        shell: bash
         working-directory: terraform
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -38,37 +39,65 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/ecs-supply-chain-gh-plan
           aws-region: ${{ env.AWS_REGION }}
-      - run: terraform fmt -check -recursive
-      - run: terraform init -input=false
-      - run: terraform validate
-      - run: terraform plan -input=false -out=tfplan
+      - run: terraform fmt -check -recursive -no-color 2>&1 | tee -a terraform.log
+      - run: terraform init -input=false -no-color 2>&1 | tee -a terraform.log
+      - run: terraform validate -no-color 2>&1 | tee -a terraform.log
+      - run: terraform plan -input=false -no-color -out=tfplan 2>&1 | tee -a terraform.log
       - run: terraform show -json tfplan > plan.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: terraform-plan
           path: terraform/plan.json
-      - name: Estimate monthly cost change
+      - uses: infracost/actions/setup@a5783eb98adc93aa7a0049fce0abb06fdd30770a # v5.0.1
+        with:
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+      - name: Estimate monthly cost change (Infracost)
         id: cost
         env:
           COST_THRESHOLD_USD: ${{ vars.COST_THRESHOLD_USD || '10' }}
         run: |
-          python3 ../.github/scripts/cost.py plan.json > cost.md
+          infracost diff --path plan.json --format json --out-file infracost.json
+          infracost output --path infracost.json --format github-comment --out-file cost.md
+          DIFF=$(jq -r '.diffTotalMonthlyCost // "0"' infracost.json)
+          OVER=$(awk -v d="$DIFF" -v t="$COST_THRESHOLD_USD" 'BEGIN { print (d > t) ? "true" : "false" }')
+          printf '\nMonthly cost change: **%+.2f USD**, threshold %.2f USD, approval required: **%s**\n' \
+            "$DIFF" "$COST_THRESHOLD_USD" "$OVER" >> cost.md
+          echo "over_threshold=$OVER" >> "$GITHUB_OUTPUT"
           cat cost.md >> "$GITHUB_STEP_SUMMARY"
       - name: Comment cost on PR
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh pr comment "${{ github.event.pull_request.number }}" --body-file cost.md --edit-last --create-if-none
+        run: ../.github/scripts/pr-comment.sh post infracost cost.md
+      - name: Comment failure on PR
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ../.github/scripts/pr-comment.sh check terraform-plan "Terraform plan and cost estimate" "${{ job.status }}" terraform.log
 
   trivy:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
         with:
           version: v0.75.0
       - name: Trivy config scan (fail on HIGH/CRITICAL)
-        run: trivy config --severity HIGH,CRITICAL --exit-code 1 --ignorefile .trivyignore.yaml terraform/
+        run: |
+          trivy config --severity HIGH,CRITICAL --ignorefile .trivyignore.yaml --format json --output trivy.json terraform/
+          trivy convert --format table --exit-code 1 trivy.json
+      - name: Comment result on PR
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ -f trivy.json ]]; then .github/scripts/trivy-report.sh trivy.json > trivy.md; fi
+          .github/scripts/pr-comment.sh check trivy-config "Trivy config scan" "${{ job.status }}" trivy.md
 
   cost-gate:
     needs: plan
